@@ -76,7 +76,7 @@ impl Daily {
 mod tests {
     use super::*;
     use approx::*;
-    use std::time::SystemTime;
+    use std::time::{Duration, SystemTime};
 
     #[test]
     fn starts_today() {
@@ -98,19 +98,38 @@ mod tests {
     }
 
     #[test]
+    fn dtstart() {
+        let dtstart = SystemTime::now() - Duration::from_secs(1_234_456);
+
+        let daily = super::Daily::new(Options {
+            dtstart: Some(dtstart),
+            ..Options::default()
+        })
+        .unwrap();
+
+        let first = daily.all().next().unwrap();
+
+        assert_eq!(dtstart, first);
+    }
+
+    #[test]
     fn multiple_days() {
-        let now = SystemTime::now();
-        let daily = super::Daily::new(Options::default()).unwrap();
+        let dtstart = SystemTime::now();
+        let daily = super::Daily::new(Options {
+            dtstart: Some(dtstart),
+            ..Options::default()
+        })
+        .unwrap();
         let mut dates = daily.all().skip(1);
 
-        assert_abs_diff_eq!(
-            dates.next().unwrap().duration_since(now).unwrap().as_secs(),
-            60 * 60 * 24,
+        assert_eq!(
+            dtstart + Duration::from_secs(60 * 60 * 24),
+            dates.next().unwrap(),
         );
 
-        assert_abs_diff_eq!(
-            dates.next().unwrap().duration_since(now).unwrap().as_secs(),
-            60 * 60 * 24 * 2,
+        assert_eq!(
+            dtstart + Duration::from_secs(60 * 60 * 24 * 2),
+            dates.next().unwrap(),
         );
     }
 
@@ -128,9 +147,7 @@ mod tests {
     #[test]
     fn until_limit() {
         let daily = super::Daily::new(Options {
-            end: End::Until(
-                SystemTime::now() + std::time::Duration::from_secs(60 * 60 * 24 * 4 + 5),
-            ),
+            end: End::Until(SystemTime::now() + Duration::from_secs(60 * 60 * 24 * 4 + 5)),
             ..Options::default()
         })
         .unwrap();
@@ -142,17 +159,17 @@ mod tests {
 
     #[test]
     fn interval() {
-        let now = SystemTime::now();
+        let dtstart = SystemTime::now();
         let daily = super::Daily::new(Options {
+            dtstart: Some(dtstart),
             interval: Some(3),
             ..Options::default()
-        })
-        .unwrap();
+        }).unwrap();
 
         let three_days_later = daily.all().skip(1).next().unwrap();
 
         assert_abs_diff_eq!(
-            three_days_later.duration_since(now).unwrap().as_secs(),
+            three_days_later.duration_since(dtstart).unwrap().as_secs(),
             60 * 60 * 24 * 3,
         );
     }
