@@ -1,3 +1,5 @@
+use chrono::{NaiveDateTime, TimeZone as _};
+use chrono_tz::Tz;
 use std::{error::Error, time::SystemTime};
 
 #[derive(Clone, Copy)]
@@ -15,56 +17,57 @@ impl Default for End {
 
 pub struct Daily {
     interval: u32,
-    timezone: hourglass::Timezone,
-    dtstart: hourglass::Timespec,
+    timezone: Tz,
+    dtstart: NaiveDateTime,
     end: End,
 }
 
 #[derive(Default)]
-pub struct Options<'a> {
+pub struct Options {
     pub interval: Option<u32>,
     pub dtstart: Option<SystemTime>,
-    pub timezone: Option<&'a str>,
+    pub timezone: Option<Tz>,
     pub end: End,
 }
 
-fn timespec(time: SystemTime) -> hourglass::Timespec {
+fn timespec(time: SystemTime) -> NaiveDateTime {
     let duration = time.duration_since(SystemTime::UNIX_EPOCH).expect("bug");
-    hourglass::Timespec::unix(duration.as_secs() as i64, 0).expect("bug")
+    NaiveDateTime::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos())
 }
 
-fn timezone(tz: Option<&str>) -> Result<hourglass::Timezone, Box<dyn Error>> {
-    tz.map(hourglass::Timezone::new)
-        .unwrap_or_else(hourglass::Timezone::local)
-        .map_err(Into::into)
+fn local_tz() -> Tz {
+    iana_time_zone::get_timezone()
+        .expect("bug: could not get tz")
+        .parse()
+        .expect("bug: local tz could not be parsed")
 }
 
 impl Daily {
     pub fn new(options: Options) -> Result<Self, Box<dyn Error>> {
         Ok(Daily {
             dtstart: timespec(options.dtstart.unwrap_or_else(|| SystemTime::now())),
-            timezone: timezone(options.timezone)?,
+            timezone: options.timezone.unwrap_or_else(local_tz),
             interval: options.interval.unwrap_or(1),
             end: options.end,
         })
     }
 
     pub fn all(&self) -> impl Iterator<Item = SystemTime> + '_ {
-        let mut cursor = self.dtstart.to_datetime(&self.timezone);
-        let interval = hourglass::Deltatime::days(i64::from(self.interval));
+        let mut cursor = self.timezone.from_utc_datetime(&self.dtstart);
+        let interval = chrono::Duration::days(self.interval as i64);
         let mut end = self.end;
 
         std::iter::from_fn(move || {
             match end {
                 End::Count(0) => return None,
-                End::Until(until) if timespec(until) < cursor.to_timespec() => return None,
+                End::Until(until) if timespec(until) < cursor.naive_utc() => return None,
                 End::Count(ref mut count) => *count -= 1,
                 _ => {}
             }
 
             let next = cursor + interval;
             let current = std::mem::replace(&mut cursor, next);
-            Some(SystemTime::UNIX_EPOCH + std::time::Duration::new(current.unix() as u64, 0))
+            Some(current.into())
         })
     }
 }
@@ -102,12 +105,12 @@ mod tests {
 
         assert_abs_diff_eq!(
             dates.next().unwrap().duration_since(now).unwrap().as_secs(),
-            60 * 60 * 24 - 1,
+            60 * 60 * 24,
         );
 
         assert_abs_diff_eq!(
             dates.next().unwrap().duration_since(now).unwrap().as_secs(),
-            60 * 60 * 24 * 2 - 1,
+            60 * 60 * 24 * 2,
         );
     }
 
@@ -135,5 +138,22 @@ mod tests {
         let count = daily.all().count();
 
         assert_eq!(count, 5);
+    }
+
+    #[test]
+    fn interval() {
+        let now = SystemTime::now();
+        let daily = super::Daily::new(Options {
+            interval: Some(3),
+            ..Options::default()
+        })
+        .unwrap();
+
+        let three_days_later = daily.all().skip(1).next().unwrap();
+
+        assert_abs_diff_eq!(
+            three_days_later.duration_since(now).unwrap().as_secs(),
+            60 * 60 * 24 * 3,
+        );
     }
 }
