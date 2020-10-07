@@ -1,4 +1,4 @@
-use chrono::{NaiveDateTime, TimeZone as _};
+use chrono::{NaiveDateTime, Offset as _, TimeZone as _};
 use chrono_tz::Tz;
 use std::{error::Error, time::SystemTime};
 
@@ -65,7 +65,16 @@ impl Daily {
                 _ => {}
             }
 
-            let next = cursor + interval;
+            let mut next = cursor + interval;
+
+            if next.offset() != cursor.offset() {
+                let difference = chrono::Duration::seconds(
+                    (next.offset().fix().local_minus_utc()
+                        - cursor.offset().fix().local_minus_utc()) as i64,
+                );
+                next = next - difference;
+            }
+
             let current = std::mem::replace(&mut cursor, next);
             Some(current.into())
         })
@@ -164,7 +173,8 @@ mod tests {
             dtstart: Some(dtstart),
             interval: Some(3),
             ..Options::default()
-        }).unwrap();
+        })
+        .unwrap();
 
         let three_days_later = daily.all().skip(1).next().unwrap();
 
@@ -172,5 +182,24 @@ mod tests {
             three_days_later.duration_since(dtstart).unwrap().as_secs(),
             60 * 60 * 24 * 3,
         );
+    }
+
+    #[test]
+    fn dst_changes() {
+        let last_day_of_dst =
+            SystemTime::from(chrono_tz::US::Eastern.ymd(2019, 11, 2).and_hms(23, 0, 0));
+
+        let daily = super::Daily::new(Options {
+            dtstart: Some(last_day_of_dst),
+            timezone: Some(chrono_tz::US::Eastern),
+            ..Options::default()
+        })
+        .unwrap();
+
+        let first_day_of_no_dst = daily.all().skip(1).next().unwrap();
+        let difference = first_day_of_no_dst.duration_since(last_day_of_dst).unwrap();
+
+        // 25 hours
+        assert_eq!(difference, Duration::from_secs(25 * 60 * 60));
     }
 }
