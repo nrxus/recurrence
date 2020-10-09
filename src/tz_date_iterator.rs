@@ -5,7 +5,7 @@ use std::time::SystemTime;
 #[derive(Clone, Copy)]
 pub enum End {
     Until(NaiveDateTime),
-    Count(u32),
+    Count(usize),
     Never,
 }
 
@@ -37,9 +37,7 @@ impl Iterator for TzDateIterator {
     fn next(&mut self) -> Option<SystemTime> {
         match self.end {
             End::Count(0) => return None,
-            End::Until(until) if until < self.cursor.naive_utc() => {
-                return None
-            }
+            End::Until(until) if until < self.cursor.naive_utc() => return None,
             End::Count(ref mut count) => *count -= 1,
             _ => {}
         }
@@ -56,5 +54,13 @@ impl Iterator for TzDateIterator {
 
         let current = std::mem::replace(&mut self.cursor, next);
         Some(current.into())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self.end {
+            End::Until(_) => (0, None),
+            End::Count(n) => (n, Some(n)),
+            End::Never => (usize::MAX, None),
+        }
     }
 }

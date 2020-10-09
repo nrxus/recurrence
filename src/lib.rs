@@ -8,7 +8,7 @@ pub use daily::Daily;
 #[derive(Clone, Copy)]
 pub enum End {
     Until(SystemTime),
-    Count(u32),
+    Count(usize),
     Never,
 }
 
