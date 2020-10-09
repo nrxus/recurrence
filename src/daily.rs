@@ -1,19 +1,7 @@
-use chrono::{NaiveDateTime, Offset as _, TimeZone as _};
+use crate::{tz_date_iterator::TzDateIterator, End};
+use chrono::{NaiveDateTime, TimeZone as _};
 use chrono_tz::Tz;
 use std::{error::Error, time::SystemTime};
-
-#[derive(Clone, Copy)]
-pub enum End {
-    Until(SystemTime),
-    Count(u32),
-    Never,
-}
-
-impl Default for End {
-    fn default() -> Self {
-        End::Never
-    }
-}
 
 pub struct Daily {
     interval: u32,
@@ -30,7 +18,26 @@ pub struct Options {
     pub end: End,
 }
 
-fn timespec(time: SystemTime) -> NaiveDateTime {
+impl Daily {
+    pub fn new(options: Options) -> Result<Self, Box<dyn Error>> {
+        Ok(Daily {
+            dtstart: from_system_to_naive(options.dtstart.unwrap_or_else(|| SystemTime::now())),
+            timezone: options.timezone.unwrap_or_else(local_tz),
+            interval: options.interval.unwrap_or(1),
+            end: options.end,
+        })
+    }
+
+    pub fn all(&self) -> impl Iterator<Item = SystemTime> {
+        TzDateIterator {
+            end: self.end.into(),
+            cursor: self.timezone.from_utc_datetime(&self.dtstart),
+            interval: chrono::Duration::days(self.interval as i64),
+        }
+    }
+}
+
+fn from_system_to_naive(time: SystemTime) -> NaiveDateTime {
     let duration = time.duration_since(SystemTime::UNIX_EPOCH).expect("bug");
     NaiveDateTime::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos())
 }
@@ -40,45 +47,6 @@ fn local_tz() -> Tz {
         .expect("bug: could not get tz")
         .parse()
         .expect("bug: local tz could not be parsed")
-}
-
-impl Daily {
-    pub fn new(options: Options) -> Result<Self, Box<dyn Error>> {
-        Ok(Daily {
-            dtstart: timespec(options.dtstart.unwrap_or_else(|| SystemTime::now())),
-            timezone: options.timezone.unwrap_or_else(local_tz),
-            interval: options.interval.unwrap_or(1),
-            end: options.end,
-        })
-    }
-
-    pub fn all(&self) -> impl Iterator<Item = SystemTime> + '_ {
-        let mut cursor = self.timezone.from_utc_datetime(&self.dtstart);
-        let interval = chrono::Duration::days(self.interval as i64);
-        let mut end = self.end;
-
-        std::iter::from_fn(move || {
-            match end {
-                End::Count(0) => return None,
-                End::Until(until) if timespec(until) < cursor.naive_utc() => return None,
-                End::Count(ref mut count) => *count -= 1,
-                _ => {}
-            }
-
-            let mut next = cursor + interval;
-
-            if next.offset() != cursor.offset() {
-                let difference = chrono::Duration::seconds(
-                    (next.offset().fix().local_minus_utc()
-                        - cursor.offset().fix().local_minus_utc()) as i64,
-                );
-                next = next - difference;
-            }
-
-            let current = std::mem::replace(&mut cursor, next);
-            Some(current.into())
-        })
-    }
 }
 
 #[cfg(test)]
