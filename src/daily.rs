@@ -35,6 +35,29 @@ impl Daily {
             interval: chrono::Duration::days(self.interval as i64),
         }
     }
+
+    pub fn after(&self, min: SystemTime) -> impl Iterator<Item = SystemTime> {
+        let min = self.timezone.from_utc_datetime(&from_system_to_naive(min));
+        let dtstart = self.timezone.from_utc_datetime(&self.dtstart);
+
+        let cursor = if min <= dtstart {
+            dtstart
+        } else {
+            let time = dtstart.time();
+            let mut min_date = min.date();
+            if time < min.time() {
+                min_date = min_date.succ();
+            }
+
+            min_date.and_time(time).expect("bug: and_time")
+        };
+
+        TzDateIterator {
+            end: self.end.into(),
+            interval: chrono::Duration::days(self.interval as i64),
+            cursor,
+        }
+    }
 }
 
 fn from_system_to_naive(time: SystemTime) -> NaiveDateTime {
@@ -169,5 +192,59 @@ mod tests {
 
         // 25 hours
         assert_eq!(difference, Duration::from_secs(25 * 60 * 60));
+    }
+
+    #[test]
+    fn after_before_dtstart() {
+        let dtstart = SystemTime::now() - Duration::from_secs(1_234_456);
+
+        let daily = super::Daily::new(Options {
+            dtstart: Some(dtstart),
+            ..Options::default()
+        })
+        .unwrap();
+
+        let first = daily
+            .after(dtstart - Duration::from_secs(60 * 60 * 40))
+            .next()
+            .unwrap();
+
+        assert_eq!(dtstart, first);
+    }
+
+    #[test]
+    fn after_right_after_dtstart() {
+        let dtstart = SystemTime::now() - Duration::from_secs(1_234_456);
+
+        let daily = super::Daily::new(Options {
+            dtstart: Some(dtstart),
+            ..Options::default()
+        })
+        .unwrap();
+
+        let first = daily
+            .after(dtstart + Duration::from_secs(60))
+            .next()
+            .unwrap();
+
+        assert_eq!(dtstart + Duration::from_secs(60 * 60 * 24), first);
+    }
+
+    #[test]
+    fn after_days_after_dtstart() {
+        let dtstart = SystemTime::now() - Duration::from_secs(1_234_456);
+
+        let daily = super::Daily::new(Options {
+            dtstart: Some(dtstart),
+            ..Options::default()
+        })
+        .unwrap();
+
+        let first = daily
+            .after(dtstart + Duration::from_secs(60 * 60 * 24 * 5 + 10))
+            .next()
+            .unwrap();
+
+        assert_eq!(dtstart + Duration::from_secs(60 * 60 * 24 * 6), first);
     }
 }
