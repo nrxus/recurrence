@@ -1,7 +1,7 @@
 use crate::{tz_date_iterator::TzDateIterator, End};
 use chrono::{NaiveDateTime, TimeZone as _};
 use chrono_tz::Tz;
-use std::{error::Error, time::SystemTime};
+use std::time::SystemTime;
 
 pub struct Daily {
     interval: u32,
@@ -19,13 +19,13 @@ pub struct Options {
 }
 
 impl Daily {
-    pub fn new(options: Options) -> Result<Self, Box<dyn Error>> {
-        Ok(Daily {
+    pub fn new(options: Options) -> Self {
+        Daily {
             dtstart: from_system_to_naive(options.dtstart.unwrap_or_else(|| SystemTime::now())),
             timezone: options.timezone.unwrap_or_else(local_tz),
             interval: options.interval.unwrap_or(1),
             end: options.end,
-        })
+        }
     }
 
     pub fn all(&self) -> impl Iterator<Item = SystemTime> {
@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn starts_today() {
         let now = SystemTime::now();
-        let daily = super::Daily::new(Options::default()).unwrap();
+        let daily = super::Daily::new(Options::default());
         let mut dates = daily.all();
 
         assert_abs_diff_eq!(
@@ -104,8 +104,7 @@ mod tests {
         let daily = super::Daily::new(Options {
             dtstart: Some(dtstart),
             ..Options::default()
-        })
-        .unwrap();
+        });
 
         let first = daily.all().next().unwrap();
 
@@ -118,8 +117,7 @@ mod tests {
         let daily = super::Daily::new(Options {
             dtstart: Some(dtstart),
             ..Options::default()
-        })
-        .unwrap();
+        });
         let mut dates = daily.all().skip(1);
 
         assert_eq!(
@@ -138,8 +136,7 @@ mod tests {
         let daily = super::Daily::new(Options {
             end: End::Count(2),
             ..Options::default()
-        })
-        .unwrap();
+        });
         let count = daily.all().count();
         assert_eq!(count, 2);
     }
@@ -149,8 +146,7 @@ mod tests {
         let daily = super::Daily::new(Options {
             end: End::Until(SystemTime::now() + Duration::from_secs(60 * 60 * 24 * 4 + 5)),
             ..Options::default()
-        })
-        .unwrap();
+        });
 
         let count = daily.all().count();
 
@@ -164,8 +160,7 @@ mod tests {
             dtstart: Some(dtstart),
             interval: Some(3),
             ..Options::default()
-        })
-        .unwrap();
+        });
 
         let three_days_later = daily.all().skip(1).next().unwrap();
 
@@ -184,8 +179,7 @@ mod tests {
             dtstart: Some(last_day_of_dst),
             timezone: Some(chrono_tz::US::Eastern),
             ..Options::default()
-        })
-        .unwrap();
+        });
 
         let first_day_of_no_dst = daily.all().skip(1).next().unwrap();
         let difference = first_day_of_no_dst.duration_since(last_day_of_dst).unwrap();
@@ -201,8 +195,7 @@ mod tests {
         let daily = super::Daily::new(Options {
             dtstart: Some(dtstart),
             ..Options::default()
-        })
-        .unwrap();
+        });
 
         let first = daily
             .after(dtstart - Duration::from_secs(60 * 60 * 40))
@@ -219,8 +212,7 @@ mod tests {
         let daily = super::Daily::new(Options {
             dtstart: Some(dtstart),
             ..Options::default()
-        })
-        .unwrap();
+        });
 
         let first = daily
             .after(dtstart + Duration::from_secs(60))
@@ -237,8 +229,7 @@ mod tests {
         let daily = super::Daily::new(Options {
             dtstart: Some(dtstart),
             ..Options::default()
-        })
-        .unwrap();
+        });
 
         let first = daily
             .after(dtstart + Duration::from_secs(60 * 60 * 24 * 5 + 10))

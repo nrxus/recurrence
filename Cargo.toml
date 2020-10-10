@@ -1,10 +1,8 @@
 [package]
-name = "rrule"
-version = "0.1.0"
+name = "recurrence"
+version = "0.0.1"
 authors = ["Andrés Medina <andresnrx@gmail.com>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 chrono = "^0.4"
