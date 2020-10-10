@@ -1,9 +1,11 @@
-mod tz_date_iterator;
 pub mod daily;
+pub mod rrule;
+
+mod tz_date_iterator;
 
 use std::time::SystemTime;
 
-pub use daily::Daily;
+pub use crate::{daily::Daily, rrule::RRule};
 
 #[derive(Clone, Copy)]
 pub enum End {
