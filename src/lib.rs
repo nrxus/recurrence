@@ -1,4 +1,5 @@
 pub mod daily;
+pub mod weekly;
 
 mod rrule;
 mod set;
