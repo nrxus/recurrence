@@ -7,7 +7,7 @@ mod tz_date_iterator;
 
 use std::time::SystemTime;
 
-pub use crate::{daily::Daily, rrule::RRule, set::Set};
+pub use crate::{daily::Daily, rrule::RRule, set::Set, weekly::Weekly};
 
 #[derive(Clone, Copy)]
 pub enum End {
