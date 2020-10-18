@@ -39,21 +39,28 @@ impl Daily {
     pub fn after(&self, min: SystemTime) -> impl Iterator<Item = SystemTime> {
         let min = self.timezone.from_utc_datetime(&from_system_to_naive(min));
         let dtstart = self.timezone.from_utc_datetime(&self.dtstart);
+        let mut end = self.end;
 
         let cursor = if min <= dtstart {
             dtstart
         } else {
             let time = dtstart.time();
-            let mut min_date = min.date();
+            let start_date = dtstart.date();
+            let mut date = min.date();
+
             if time < min.time() {
-                min_date = min_date.succ();
+                date = date.succ();
             }
 
-            min_date.and_time(time).expect("bug: and_time")
+            if let End::Count(ref mut c) = end {
+                *c -= (date - start_date).num_days() as usize;
+            }
+
+            date.and_time(time).expect("bug: and_time")
         };
 
         TzDateIterator {
-            end: self.end.into(),
+            end: end.into(),
             interval: chrono::Duration::days(self.interval as i64),
             cursor,
         }
@@ -75,23 +82,24 @@ fn local_tz() -> Tz {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::*;
     use approx::*;
-    use std::time::{Duration, SystemTime};
+    use std::time::SystemTime;
 
     #[test]
     fn starts_today() {
         let now = SystemTime::now();
-        let daily = super::Daily::new(Options::default());
-        let mut dates = daily.all();
+        let dates = super::Daily::new(Options::default());
+        let mut dates = dates.all();
 
         assert_abs_diff_eq!(
+            now.duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             dates
                 .next()
                 .unwrap()
                 .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            now.duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
         );
@@ -99,75 +107,64 @@ mod tests {
 
     #[test]
     fn dtstart() {
-        let dtstart = SystemTime::now() - Duration::from_secs(1_234_456);
+        let dtstart = july_first();
 
-        let daily = super::Daily::new(Options {
+        let dates = super::Daily::new(Options {
             dtstart: Some(dtstart),
             ..Options::default()
         });
 
-        let first = daily.all().next().unwrap();
+        let first = dates.all().nth(0).unwrap();
 
         assert_eq!(dtstart, first);
     }
 
     #[test]
     fn multiple_days() {
-        let dtstart = SystemTime::now();
-        let daily = super::Daily::new(Options {
+        let dtstart = july_first();
+        let dates = super::Daily::new(Options {
             dtstart: Some(dtstart),
             ..Options::default()
         });
-        let mut dates = daily.all().skip(1);
+        let mut dates = dates.all().skip(1);
 
-        assert_eq!(
-            dtstart + Duration::from_secs(60 * 60 * 24),
-            dates.next().unwrap(),
-        );
-
-        assert_eq!(
-            dtstart + Duration::from_secs(60 * 60 * 24 * 2),
-            dates.next().unwrap(),
-        );
+        assert_eq!(dtstart + ONE_DAY, dates.next().unwrap());
+        assert_eq!(dtstart + 2 * ONE_DAY, dates.next().unwrap());
     }
 
     #[test]
     fn count_limit() {
-        let daily = super::Daily::new(Options {
+        let dates = super::Daily::new(Options {
             end: End::Count(2),
             ..Options::default()
         });
-        let count = daily.all().count();
-        assert_eq!(count, 2);
+        let count = dates.all().count();
+        assert_eq!(2, count);
     }
 
     #[test]
     fn until_limit() {
-        let daily = super::Daily::new(Options {
-            end: End::Until(SystemTime::now() + Duration::from_secs(60 * 60 * 24 * 4 + 5)),
+        let dates = super::Daily::new(Options {
+            end: End::Until(SystemTime::now() + 5 * ONE_DAY + ONE_MINUTE),
             ..Options::default()
         });
 
-        let count = daily.all().count();
+        let count = dates.all().count();
 
-        assert_eq!(count, 5);
+        assert_eq!(6, count);
     }
 
     #[test]
     fn interval() {
-        let dtstart = SystemTime::now();
-        let daily = super::Daily::new(Options {
+        let dtstart = july_first();
+        let dates = super::Daily::new(Options {
             dtstart: Some(dtstart),
             interval: Some(3),
             ..Options::default()
         });
 
-        let three_days_later = daily.all().skip(1).next().unwrap();
-
-        assert_abs_diff_eq!(
-            three_days_later.duration_since(dtstart).unwrap().as_secs(),
-            60 * 60 * 24 * 3,
-        );
+        let three_days_later = dates.all().nth(1).unwrap();
+        assert_eq!(dtstart + 3 * ONE_DAY, three_days_later);
     }
 
     #[test]
@@ -175,67 +172,73 @@ mod tests {
         let last_day_of_dst =
             SystemTime::from(chrono_tz::US::Eastern.ymd(2019, 11, 2).and_hms(23, 0, 0));
 
-        let daily = super::Daily::new(Options {
+        let dates = super::Daily::new(Options {
             dtstart: Some(last_day_of_dst),
             timezone: Some(chrono_tz::US::Eastern),
             ..Options::default()
         });
 
-        let first_day_of_no_dst = daily.all().skip(1).next().unwrap();
-        let difference = first_day_of_no_dst.duration_since(last_day_of_dst).unwrap();
-
-        // 25 hours
-        assert_eq!(difference, Duration::from_secs(25 * 60 * 60));
+        let first_day_of_no_dst = dates.all().nth(1).unwrap();
+        assert_eq!(last_day_of_dst + ONE_DAY + ONE_HOUR, first_day_of_no_dst);
     }
 
     #[test]
     fn after_before_dtstart() {
-        let dtstart = SystemTime::now() - Duration::from_secs(1_234_456);
+        let dtstart = july_first();
 
-        let daily = super::Daily::new(Options {
+        let dates = super::Daily::new(Options {
             dtstart: Some(dtstart),
             ..Options::default()
         });
 
-        let first = daily
-            .after(dtstart - Duration::from_secs(60 * 60 * 40))
-            .next()
-            .unwrap();
-
+        let first = dates.after(dtstart - 40 * ONE_HOUR).nth(0).unwrap();
         assert_eq!(dtstart, first);
     }
 
     #[test]
     fn after_right_after_dtstart() {
-        let dtstart = SystemTime::now() - Duration::from_secs(1_234_456);
+        let dtstart = july_first();
 
-        let daily = super::Daily::new(Options {
+        let dates = super::Daily::new(Options {
             dtstart: Some(dtstart),
             ..Options::default()
         });
 
-        let first = daily
-            .after(dtstart + Duration::from_secs(60))
-            .next()
-            .unwrap();
-
-        assert_eq!(dtstart + Duration::from_secs(60 * 60 * 24), first);
+        let first = dates.after(dtstart + ONE_MINUTE).next().unwrap();
+        assert_eq!(dtstart + ONE_DAY, first);
     }
 
     #[test]
     fn after_days_after_dtstart() {
-        let dtstart = SystemTime::now() - Duration::from_secs(1_234_456);
+        let dtstart = july_first();
 
-        let daily = super::Daily::new(Options {
+        let dates = super::Daily::new(Options {
             dtstart: Some(dtstart),
             ..Options::default()
         });
 
-        let first = daily
-            .after(dtstart + Duration::from_secs(60 * 60 * 24 * 5 + 10))
-            .next()
+        let first = dates
+            .after(dtstart + 5 * ONE_DAY + ONE_MINUTE)
+            .nth(0)
             .unwrap();
 
-        assert_eq!(dtstart + Duration::from_secs(60 * 60 * 24 * 6), first);
+        assert_eq!(dtstart + 6 * ONE_DAY, first);
+    }
+
+    #[test]
+    fn after_with_count() {
+        let dtstart = july_first();
+
+        let dates = super::Daily::new(Options {
+            dtstart: Some(dtstart),
+            end: End::Count(5),
+            ..Options::default()
+        });
+
+        // 5 count as expected
+        assert_eq!(5, dates.all().count());
+
+        // but only 1 if we are looking at starting 4 days later
+        assert_eq!(1, dates.after(dtstart + 4 * ONE_DAY).count());
     }
 }

@@ -90,14 +90,11 @@ fn local_tz() -> Tz {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_helpers::*;
+
     use super::*;
     use approx::*;
-    use std::time::{Duration, SystemTime};
-
-    const ONE_MINUTE: Duration = Duration::from_secs(60);
-    const ONE_HOUR: Duration = Duration::from_secs(60 * ONE_MINUTE.as_secs());
-    const ONE_DAY: Duration = Duration::from_secs(24 * ONE_HOUR.as_secs());
-    const ONE_WEEK: Duration = Duration::from_secs(7 * ONE_DAY.as_secs());
+    use std::time::SystemTime;
 
     #[test]
     fn starts_today() {
@@ -253,9 +250,5 @@ mod tests {
 
         // but only 2 if we are looking at starting 12 days later
         assert_eq!(dates.after(dtstart + 12 * ONE_DAY).count(), 2);
-    }
-
-    fn july_first() -> SystemTime {
-        SystemTime::UNIX_EPOCH + Duration::from_secs(1593576285)
     }
 }
