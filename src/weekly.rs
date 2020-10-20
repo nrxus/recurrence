@@ -62,7 +62,7 @@ impl Weekly {
             };
 
             if let End::Count(ref mut c) = end {
-                *c -= (date - start_date).num_weeks() as usize;
+                *c = c.saturating_sub((date - start_date).num_weeks() as usize);
             }
 
             date.and_time(time).expect("bug: and_time")
@@ -250,5 +250,18 @@ mod tests {
 
         // but only 2 if we are looking at starting 12 days later
         assert_eq!(dates.after(dtstart + 12 * ONE_DAY).count(), 2);
+    }
+
+    #[test]
+    fn after_too_late() {
+        let dtstart = july_first();
+
+        let dates = super::Weekly::new(Options {
+            dtstart: Some(dtstart),
+            end: End::Count(1),
+            ..Options::default()
+        });
+
+        assert_eq!(dates.after(dtstart + 12 * ONE_DAY).count(), 0);
     }
 }

@@ -53,7 +53,7 @@ impl Daily {
             }
 
             if let End::Count(ref mut c) = end {
-                *c -= (date - start_date).num_days() as usize;
+                *c = c.saturating_sub((date - start_date).num_days() as usize);
             }
 
             date.and_time(time).expect("bug: and_time")
@@ -240,5 +240,18 @@ mod tests {
 
         // but only 1 if we are looking at starting 4 days later
         assert_eq!(1, dates.after(dtstart + 4 * ONE_DAY).count());
+    }
+
+    #[test]
+    fn after_too_late() {
+        let dtstart = july_first();
+
+        let dates = super::Daily::new(Options {
+            dtstart: Some(dtstart),
+            end: End::Count(2),
+            ..Options::default()
+        });
+
+        assert_eq!(0, dates.after(dtstart + 4 * ONE_DAY).count());
     }
 }
